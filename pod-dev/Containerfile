@@ -1,0 +1,87 @@
+# Use a slim Debian base for a stable day-to-day development pod
+FROM debian:bookworm-slim
+
+# Install core tooling and build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        build-essential \
+        ca-certificates \
+        cargo \
+        cmake \
+        curl \
+        gettext \
+        git \
+        libtool \
+        libtool-bin \
+        openssh-client \
+        pkg-config \
+        ripgrep \
+        rustc \
+        tmux \
+        unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set the user as the active user
+ARG USER_NAME=user
+RUN useradd -ms /bin/bash $USER_NAME
+
+# Set the home dir
+ARG HOME_DIR="/home/${USER_NAME}"
+ARG PROJ_DIR="/home/${USER_NAME}/proj"
+ARG POD_NAME="pod-dev"
+ARG NVIM_VERSION="v0.11.5"
+ARG DOTS_REPO="git@github.com:8hantanu/dots.git"
+
+# Set the working directory within the container
+WORKDIR $HOME_DIR
+
+# Create directory for projects
+RUN mkdir -p $PROJ_DIR
+RUN mkdir -p $HOME_DIR/.ssh
+RUN mkdir -p $HOME_DIR/.config/nvim
+RUN mkdir -p $HOME_DIR/.local/share/nvim/site/autoload
+
+RUN chown -R $USER_NAME:$USER_NAME $HOME_DIR
+RUN chmod 700 $HOME_DIR/.ssh
+
+# Get rust-analyzer
+RUN curl -L https://github.com/rust-analyzer/rust-analyzer/releases/latest/download/rust-analyzer-linux -o /usr/local/bin/rust-analyzer && chmod +x /usr/local/bin/rust-analyzer
+
+# Get chatgpt-cli
+RUN curl -L https://github.com/kardolus/chatgpt-cli/releases/latest/download/chatgpt-linux-amd64 -o /usr/local/bin/hey && chmod +x /usr/local/bin/hey
+
+# Install a pinned Neovim release tarball from the official release assets.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) nvim_arch="x86_64" ;; \
+        arm64) nvim_arch="arm64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-${nvim_arch}.tar.gz" -o /tmp/nvim.tar.gz; \
+    rm -rf /opt/nvim; \
+    mkdir -p /opt; \
+    tar -C /opt -xzf /tmp/nvim.tar.gz; \
+    ln -sf "/opt/nvim-linux-${nvim_arch}/bin/nvim" /usr/local/bin/nvim; \
+    rm -f /tmp/nvim.tar.gz
+
+# Install the runtime bootstrap for private dotfiles.
+COPY init.sh /usr/local/bin/pod-dev-init
+RUN chmod +x /usr/local/bin/pod-dev-init
+
+# Switch from root to user
+USER $USER_NAME
+
+# Set git author
+RUN git config --global user.name "Shantanu Mishra"
+RUN git config --global user.email "git@8hantanu.net"
+RUN git config --global poddev.dotsRepo "${DOTS_REPO}"
+
+# Set the bash prompt to reflect the username and machine name
+RUN echo "export PS1='\u@${POD_NAME}:\w\$ '" >> $HOME_DIR/.bashrc
+RUN echo 'echo "Run pod-dev-init after start if you want to clone dotfiles."' >> $HOME_DIR/.bashrc
+
+# Set the entrypoint command to launch Bash
+CMD ["/bin/bash"]

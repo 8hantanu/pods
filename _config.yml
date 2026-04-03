@@ -1,10 +1,10 @@
-title: dock
+title: pods
 author: Shantanu Mishra
 email: dev@8hantanu.net
 description: >
-  Instant developer environment setup
+  Portable On-Demand Sandbox
 
 url: https://8hantanu.net
-baseurl: /dock
+baseurl: /pods
 
 remote_theme: yree/mold

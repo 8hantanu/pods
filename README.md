@@ -1,27 +1,20 @@
-# dock ⚓
+# pods 🫛
 
-**Instant developer environment setup**
+**Portable On-Demand Sandbox**
 
-## build 🏗️
+This repository defines the `pods` system: a collection of Podman-based
+environments for different workflows such as day-to-day development,
+deployment, and other task-specific sandboxes.
 
-```bash
-sudo docker build -t dock_img .
+## Layout
+
+```text
+pod-dev/
 ```
 
-**Note:** Get latest ubuntu image if doesn't exist
-```bash
-docker pull ubuntu:latest
-```
+Each pod keeps its own `Containerfile` and helper scripts in its own
+folder.
 
+## Pods
 
-## run 🚀
-
-```bash
-sudo docker run -it --name dock -v $PROJ_PATH:/home/user/proj dock_img
-```
-
-## attach 🔗
-
-```bash
-sudo docker attach dock
-```
+- [pod-dev](./pod-dev): day-to-day development pod
