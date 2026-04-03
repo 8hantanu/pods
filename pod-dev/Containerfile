@@ -15,20 +15,22 @@ ARG CONTROL_DIR="/home/${USER_NAME}/ship/control"
 ARG POD_NAME="pod-dev"
 ARG GIT_USER_NAME="Pod User"
 ARG GIT_USER_EMAIL="pod-user@example.com"
+ARG ENABLE_GITHUB_SSH="0"
 ARG INSTALL_RUST="1"
 ARG INSTALL_NODEJS="1"
 ARG INSTALL_PYTHON="1"
 ARG INSTALL_NVIM="1"
 ARG INSTALL_OPENCODE="1"
-ARG DOTS_REPO="https://github.com/8hantanu/dots.git"
-ARG PLUG_REPO="https://github.com/8hantanu/plug.git"
-ARG WIKI_REPO="https://github.com/8hantanu/wiki.git"
+ARG DOTS_REPO="git@github.com:8hantanu/dots.git"
+ARG PLUG_REPO="git@github.com:8hantanu/plug.git"
+ARG WIKI_REPO="git@github.com:8hantanu/wiki.git"
+ENV POD_DEV_GITHUB_SSH_ENABLED="${ENABLE_GITHUB_SSH}"
 ENV PLUG_PATH="${CONTROL_DIR}/plug"
 ENV PATH="${PLUG_PATH}:${PATH}"
 
 # Install core tooling and optional packages
 RUN set -eu; \
-    packages='autoconf automake build-essential ca-certificates cmake curl gettext git libtool libtool-bin openssh-client pkg-config ripgrep stow tmux unzip'; \
+    packages='autoconf automake build-essential ca-certificates cmake curl gettext git libavif-bin libtool libtool-bin openssh-client pkg-config ripgrep stow tmux tree unzip'; \
     if [ "${INSTALL_RUST}" = "1" ]; then \
         packages="${packages} cargo rustc"; \
     fi; \
@@ -57,6 +59,8 @@ RUN mkdir -p $HOME_DIR/.local/share/nvim/site/autoload
 
 RUN chown -R $USER_NAME:$USER_NAME $HOME_DIR
 RUN chmod 700 $HOME_DIR/.ssh
+RUN ssh-keyscan github.com > $HOME_DIR/.ssh/known_hosts
+RUN chmod 600 $HOME_DIR/.ssh/known_hosts
 
 # Get rust-analyzer
 RUN if [ "${INSTALL_RUST}" = "1" ]; then \
@@ -90,20 +94,24 @@ RUN if [ "${INSTALL_NVIM}" = "1" ]; then \
         rm -f /tmp/nvim.tar.gz; \
     fi
 
-# Clone and apply dotfiles and shell tooling during the image build.
-RUN set -eu; \
-    git clone --quiet "${WIKI_REPO}" "${WIKI_DIR}"; \
-    git clone --quiet "${DOTS_REPO}" "${CONTROL_DIR}/dots"; \
-    git clone --quiet "${PLUG_REPO}" "${CONTROL_DIR}/plug"; \
-    cd "${CONTROL_DIR}/dots"; \
-    stow --target="${HOME_DIR}" .; \
-    printf '%s\n' \
-      'vim.cmd([[' \
-      'set runtimepath^=~/.vim runtimepath+=~/.vim/after' \
-      'let &packpath = &runtimepath' \
-      'source ~/.vimrc' \
-      ']])' \
-      > "${HOME_DIR}/.config/nvim/init.lua"; \
+# Optionally clone and apply GitHub-managed repos during the image build.
+RUN --mount=type=secret,id=pod_dev_github_key,target=/run/secrets/pod_dev_github_key \
+    set -eu; \
+    if [ "${ENABLE_GITHUB_SSH}" = "1" ]; then \
+      export GIT_SSH_COMMAND="ssh -i /run/secrets/pod_dev_github_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts"; \
+      git clone --quiet "${WIKI_REPO}" "${WIKI_DIR}"; \
+      git clone --quiet "${DOTS_REPO}" "${CONTROL_DIR}/dots"; \
+      git clone --quiet "${PLUG_REPO}" "${CONTROL_DIR}/plug"; \
+      cd "${CONTROL_DIR}/dots"; \
+      stow --target="${HOME_DIR}" .; \
+      printf '%s\n' \
+        'vim.cmd([[' \
+        'set runtimepath^=~/.vim runtimepath+=~/.vim/after' \
+        'let &packpath = &runtimepath' \
+        'source ~/.vimrc' \
+        ']])' \
+        > "${HOME_DIR}/.config/nvim/init.lua"; \
+    fi; \
     chown -R "${USER_NAME}:${USER_NAME}" "${HOME_DIR}"
 
 # Switch from root to user
