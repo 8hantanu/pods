@@ -2,31 +2,35 @@
 
 set -euo pipefail
 
-HOME_DIR="${HOME:-/home/user}"
-DOTS_DIR="${HOME_DIR}/dots"
-DOTS_REPO="${POD_DEV_DOTS_REPO:-$(git config --global --get poddev.dotsRepo || true)}"
+CONTAINER_NAME="${POD_DEV_CONTAINER_NAME:-pod-dev}"
+IMAGE_NAME="${POD_DEV_IMAGE_NAME:-pod-dev}"
+HOSTNAME_NAME="${POD_DEV_HOSTNAME:-pod-dev}"
+VOLUME_NAME="${POD_DEV_VOLUME_NAME:-pod-dev-proj}"
+MOUNT_PATH="${POD_DEV_MOUNT_PATH:-/home/user/proj}"
 
-if [ -z "${DOTS_REPO}" ]; then
-  echo "No dots repository configured. Set POD_DEV_DOTS_REPO or git config --global poddev.dotsRepo." >&2
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+require_cmd podman
+if ! podman volume exists "$VOLUME_NAME"; then
+  echo "Missing required volume: ${VOLUME_NAME}" >&2
+  echo "Run ./pod-dev/build.sh first." >&2
   exit 1
 fi
 
-mkdir -p "${HOME_DIR}/.ssh" "${HOME_DIR}/.config/nvim"
-chmod 700 "${HOME_DIR}/.ssh"
-
-if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-  ssh-keyscan -H github.com >> "${HOME_DIR}/.ssh/known_hosts"
-  chmod 600 "${HOME_DIR}/.ssh/known_hosts"
+if podman container exists "$CONTAINER_NAME"; then
+  if [ "$(podman inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" = "true" ]; then
+    exec podman attach "$CONTAINER_NAME"
+  fi
+  exec podman start -ai "$CONTAINER_NAME"
 fi
 
-if [ ! -d "${DOTS_DIR}/.git" ]; then
-  git clone "${DOTS_REPO}" "${DOTS_DIR}"
-else
-  git -C "${DOTS_DIR}" pull --ff-only
-fi
-
-ln -snf "${DOTS_DIR}/.vimrc" "${HOME_DIR}/.vimrc"
-ln -snf "${DOTS_DIR}/.tmux.conf" "${HOME_DIR}/.tmux.conf"
-ln -snf "${DOTS_DIR}/.nvimrc" "${HOME_DIR}/.config/nvim/init.vim"
-
-echo "Dotfiles installed from ${DOTS_REPO}."
+exec podman run -it \
+  --name "$CONTAINER_NAME" \
+  --hostname "$HOSTNAME_NAME" \
+  -v "${VOLUME_NAME}:${MOUNT_PATH}" \
+  "$IMAGE_NAME"

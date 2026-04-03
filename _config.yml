@@ -4,6 +4,8 @@ email: dev@8hantanu.net
 description: >
   Portable On-Demand Sandbox
 
+git_repo: 8hantanu/pods
+
 url: https://8hantanu.net
 baseurl: /pods
 
