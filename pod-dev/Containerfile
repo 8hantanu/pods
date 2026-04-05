@@ -1,84 +1,31 @@
 # Use a slim Debian base for a stable day-to-day development pod
 FROM debian:bookworm-slim
 
-# Set the user as the active user
 ARG USER_NAME=user
 RUN useradd -ms /bin/bash $USER_NAME
 
-# Set the home dir
 ARG HOME_DIR="/home/${USER_NAME}"
-ARG PROJ_DIR="/home/${USER_NAME}/proj"
-ARG WIKI_DIR="/home/${USER_NAME}/wiki"
-ARG SHIP_DIR="/home/${USER_NAME}/ship"
-ARG REQS_DIR="/home/${USER_NAME}/reqs"
-ARG CONTROL_DIR="/home/${USER_NAME}/ship/control"
-ARG POD_NAME="pod-dev"
 ARG GIT_USER_NAME="Pod User"
 ARG GIT_USER_EMAIL="pod-user@example.com"
-ARG ENABLE_GITHUB_SSH="0"
-ARG INSTALL_RUST="1"
-ARG INSTALL_NODEJS="1"
-ARG INSTALL_PYTHON="1"
-ARG INSTALL_NVIM="1"
-ARG INSTALL_OPENCODE="1"
-ARG DOTS_REPO="git@github.com:8hantanu/dots.git"
-ARG PLUG_REPO="git@github.com:8hantanu/plug.git"
-ARG WIKI_REPO="git@github.com:8hantanu/wiki.git"
-ENV POD_DEV_GITHUB_SSH_ENABLED="${ENABLE_GITHUB_SSH}"
-ENV PLUG_PATH="${CONTROL_DIR}/plug"
+ARG INSTALL_RUST="true"
+ARG INSTALL_NODE="true"
+ARG INSTALL_PYTHON="true"
+ARG INSTALL_OPENCODE="true"
+ARG INSTALL_NVIM="true"
+ARG DOTS_REPO=""
+ARG PLUG_REPO=""
+ARG WIKI_REPO=""
+ENV PLUG_PATH="/home/${USER_NAME}/ship/control/plug"
 ENV PATH="${PLUG_PATH}:${PATH}"
 
-# Install core tooling and optional packages
 RUN set -eu; \
     packages='autoconf automake build-essential ca-certificates cmake curl gettext git libavif-bin libtool libtool-bin openssh-client pkg-config ripgrep stow tmux tree unzip'; \
-    if [ "${INSTALL_RUST}" = "1" ]; then \
-        packages="${packages} cargo rustc"; \
-    fi; \
-    if [ "${INSTALL_NODEJS}" = "1" ] || [ "${INSTALL_OPENCODE}" = "1" ]; then \
-        packages="${packages} nodejs npm"; \
-    fi; \
-    if [ "${INSTALL_PYTHON}" = "1" ]; then \
-        packages="${packages} python3 python3-pip python3-venv"; \
-    fi; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ${packages}; \
-    rm -rf /var/lib/apt/lists/*
+    if [ "${INSTALL_RUST}" = "true" ]; then packages="${packages} cargo rustc"; fi; \
+    if [ "${INSTALL_NODE}" = "true" ] || [ "${INSTALL_OPENCODE}" = "true" ]; then packages="${packages} nodejs npm"; fi; \
+    if [ "${INSTALL_PYTHON}" = "true" ]; then packages="${packages} python3 python3-pip python3-venv"; fi; \
+    apt-get update && apt-get install -y --no-install-recommends ${packages} && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory within the container
-WORKDIR $HOME_DIR
-
-# Create directory layout
-RUN mkdir -p $PROJ_DIR
-RUN mkdir -p $WIKI_DIR
-RUN mkdir -p $SHIP_DIR
-RUN mkdir -p $REQS_DIR
-RUN mkdir -p $CONTROL_DIR
-RUN mkdir -p $HOME_DIR/.ssh
-RUN mkdir -p $HOME_DIR/.config/nvim
-RUN mkdir -p $HOME_DIR/.local/share/nvim/site/autoload
-
-RUN chown -R $USER_NAME:$USER_NAME $HOME_DIR
-RUN chmod 700 $HOME_DIR/.ssh
-RUN ssh-keyscan github.com > $HOME_DIR/.ssh/known_hosts
-RUN chmod 600 $HOME_DIR/.ssh/known_hosts
-
-# Get rust-analyzer
-RUN if [ "${INSTALL_RUST}" = "1" ]; then \
-        curl -L https://github.com/rust-analyzer/rust-analyzer/releases/latest/download/rust-analyzer-linux -o /usr/local/bin/rust-analyzer && chmod +x /usr/local/bin/rust-analyzer; \
-    fi
-
-# Install Python tooling packages
-RUN if [ "${INSTALL_PYTHON}" = "1" ]; then \
-        pip3 install --break-system-packages pynvim; \
-    fi
-
-# Install opencode using the official npm distribution.
-RUN if [ "${INSTALL_OPENCODE}" = "1" ]; then \
-        npm install -g opencode-ai && command -v opencode >/dev/null; \
-    fi
-
-# Install the current Neovim stable release tarball.
-RUN if [ "${INSTALL_NVIM}" = "1" ]; then \
+RUN if [ "${INSTALL_NVIM}" = "true" ]; then \
         set -eu; \
         arch="$(dpkg --print-architecture)"; \
         case "$arch" in \
@@ -88,43 +35,46 @@ RUN if [ "${INSTALL_NVIM}" = "1" ]; then \
         esac; \
         curl -fsSL "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-${nvim_arch}.tar.gz" -o /tmp/nvim.tar.gz; \
         rm -rf /opt/nvim; \
-        mkdir -p /opt; \
         tar -C /opt -xzf /tmp/nvim.tar.gz; \
         ln -sf "/opt/nvim-linux-${nvim_arch}/bin/nvim" /usr/local/bin/nvim; \
         rm -f /tmp/nvim.tar.gz; \
     fi
 
-# Optionally clone and apply GitHub-managed repos during the image build.
+WORKDIR $HOME_DIR
+
+RUN mkdir -p $HOME_DIR/proj $HOME_DIR/wiki $HOME_DIR/ship/reqs $HOME_DIR/ship/control $HOME_DIR/.ssh $HOME_DIR/.config/nvim $HOME_DIR/.local/share/nvim/site/autoload && \
+    chown -R $USER_NAME:$USER_NAME $HOME_DIR && \
+    chmod 700 $HOME_DIR/.ssh && \
+    ssh-keyscan github.com > $HOME_DIR/.ssh/known_hosts && \
+    chmod 600 $HOME_DIR/.ssh/known_hosts
+
+RUN if [ "${INSTALL_RUST}" = "true" ]; then \
+        curl -L https://github.com/rust-analyzer/rust-analyzer/releases/latest/download/rust-analyzer-linux -o /usr/local/bin/rust-analyzer && chmod +x /usr/local/bin/rust-analyzer; \
+    fi
+
+RUN if [ "${INSTALL_PYTHON}" = "true" ]; then pip3 install --break-system-packages pynvim; fi
+
+RUN if [ "${INSTALL_OPENCODE}" = "true" ]; then npm install -g opencode-ai; fi
+
 RUN --mount=type=secret,id=pod_dev_github_key,target=/run/secrets/pod_dev_github_key \
     set -eu; \
-    if [ "${ENABLE_GITHUB_SSH}" = "1" ]; then \
-      export GIT_SSH_COMMAND="ssh -i /run/secrets/pod_dev_github_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts"; \
-      git clone --quiet "${WIKI_REPO}" "${WIKI_DIR}"; \
-      git clone --quiet "${DOTS_REPO}" "${CONTROL_DIR}/dots"; \
-      git clone --quiet "${PLUG_REPO}" "${CONTROL_DIR}/plug"; \
-      cd "${CONTROL_DIR}/dots"; \
-      stow --target="${HOME_DIR}" .; \
-      printf '%s\n' \
-        'vim.cmd([[' \
-        'set runtimepath^=~/.vim runtimepath+=~/.vim/after' \
-        'let &packpath = &runtimepath' \
-        'source ~/.vimrc' \
-        ']])' \
-        > "${HOME_DIR}/.config/nvim/init.lua"; \
-    fi; \
+    cp /run/secrets/pod_dev_github_key /tmp/ssh_key && chmod 600 /tmp/ssh_key; \
+    export GIT_SSH_COMMAND="ssh -i /tmp/ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts"; \
+    if [ -n "${WIKI_REPO}" ]; then git clone --quiet "${WIKI_REPO}" "$HOME_DIR/wiki"; fi && \
+    if [ -n "${PLUG_REPO}" ]; then git clone --quiet "${PLUG_REPO}" "$HOME_DIR/ship/control/plug"; fi && \
+    if [ -n "${DOTS_REPO}" ]; then \
+        git clone --quiet "${DOTS_REPO}" "$HOME_DIR/ship/control/dots" && \
+        cd "$HOME_DIR/ship/control/dots" && stow --target="$HOME_DIR" . && \
+        printf 'vim.cmd([[set runtimepath^=~/.vim runtimepath+=~/.vim/after\nlet &packpath = &runtimepath\nsource ~/.vimrc]])' > "$HOME_DIR/.config/nvim/init.lua"; \
+    fi && \
     chown -R "${USER_NAME}:${USER_NAME}" "${HOME_DIR}"
 
-# Switch from root to user
 USER $USER_NAME
 
-# Set git author
-RUN git config --global user.name "${GIT_USER_NAME}"
-RUN git config --global user.email "${GIT_USER_EMAIL}"
+RUN git config --global user.name "${GIT_USER_NAME}" && \
+    git config --global user.email "${GIT_USER_EMAIL}" && \
+    echo "export PS1='\\n\\A $ '" >> $HOME_DIR/.bashrc && \
+    echo "export PLUG_PATH='${PLUG_PATH}'" >> $HOME_DIR/.bashrc && \
+    echo 'export PATH="$PLUG_PATH:$PATH"' >> $HOME_DIR/.bashrc
 
-# Set the bash prompt to reflect the username and machine name
-RUN echo "export PS1='\\n\\A $ '" >> $HOME_DIR/.bashrc
-RUN echo "export PLUG_PATH='${PLUG_PATH}'" >> $HOME_DIR/.bashrc
-RUN echo 'export PATH="$PLUG_PATH:$PATH"' >> $HOME_DIR/.bashrc
-
-# Set the entrypoint command to launch Bash
 CMD ["/bin/bash"]
